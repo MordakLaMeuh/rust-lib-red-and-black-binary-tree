@@ -1,66 +1,5 @@
-struct RawVec<T> {
-    ptr: *mut T,
-    len: usize,
-}
-
-impl<T> RawVec<T> {
-    fn new() -> Self {
-        let ptr = unsafe { libc::malloc(std::mem::size_of::<T>()) } as *mut T;
-        assert_ne!(ptr, std::ptr::null_mut());
-        Self { ptr, len: 0 }
-    }
-    fn push(&mut self, content: T) {
-        if self.len != 0 && self.len & (self.len - 1) == 0 {
-            self.ptr = unsafe {
-                libc::realloc(self.ptr as *mut _, self.len * std::mem::size_of::<T>() * 2) as *mut T
-            };
-            assert_ne!(self.ptr, std::ptr::null_mut());
-        }
-        unsafe {
-            *(self.ptr.add(self.len)) = content;
-        }
-        self.len += 1;
-    }
-    pub fn get(&self, index: usize) -> &T {
-        if index < self.len {
-            unsafe { self.ptr.add(index).as_ref().unwrap() }
-        } else {
-            panic!("request @{} with len {}", index, self.len);
-        }
-    }
-    pub fn get_mut(&mut self, index: usize) -> &mut T {
-        if index < self.len {
-            unsafe { self.ptr.add(index).as_mut().unwrap() }
-        } else {
-            panic!("request @{} with len {}", index, self.len);
-        }
-    }
-    pub fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl<T> Drop for RawVec<T> {
-    fn drop(&mut self) {
-        unsafe {
-            libc::free(self.ptr as *mut _);
-        }
-    }
-}
-
-impl<T> std::ops::Index<usize> for RawVec<T> {
-    type Output = T;
-
-    fn index(&self, idx: usize) -> &Self::Output {
-        self.get(idx)
-    }
-}
-
-impl<T> std::ops::IndexMut<usize> for RawVec<T> {
-    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        self.get_mut(idx)
-    }
-}
+mod raw_vec;
+use raw_vec::RawVec;
 
 pub struct BinaryTree<T> {
     data: RawVec<Node<T>>,
@@ -399,11 +338,36 @@ impl<T> Drop for Node<T> {
 use rand::prelude::*;
 
 fn main() {
-    // let mut v = RawVec::new();
-    // for i in 0..1024 {
-    //     v.push(i);
-    //     dbg!(v.get_mut(v.len() - 1));
-    // }
+    let mut rng = rand::thread_rng();
+
+    let mut v = RawVec::new();
+    for i in 0..1024 {
+        v.push(i);
+        // dbg!(v.get_mut(v.len() - 1));
+    }
+    for _i in 0..1024 {
+        v.swap_remove(0);
+        // dbg!(v.swap_remove(0));
+    }
+    dbg!(v.len());
+
+    let mut v = RawVec::new();
+    let mut max_alloc = 0;
+    for _i in 0..1024 * 1024 {
+        let b: bool = rng.gen();
+        if b {
+            let val: u64 = rng.gen();
+            v.push(val);
+            max_alloc = std::cmp::max(max_alloc, v.len());
+        } else {
+            let len = v.len();
+            if len > 0 {
+                let idx = rng.gen::<usize>() % len;
+                v.swap_remove(idx);
+            }
+        }
+    }
+    println!("Max alloc: {}", max_alloc);
 
     println!("sizeof node u64 : {}", std::mem::size_of::<Node<u64>>());
 
@@ -432,8 +396,7 @@ fn main() {
         println!("{}", elem);
     }
     drop(rnb);
-
-    let mut rng = rand::thread_rng();
+    // return;
 
     // loop {
     for _j in 0..4096 {
