@@ -1,11 +1,75 @@
+struct RawVec<T> {
+    ptr: *mut T,
+    len: usize,
+}
+
+impl<T> RawVec<T> {
+    fn new() -> Self {
+        let ptr = unsafe { libc::malloc(std::mem::size_of::<T>()) } as *mut T;
+        assert_ne!(ptr, std::ptr::null_mut());
+        Self { ptr, len: 0 }
+    }
+    fn push(&mut self, content: T) {
+        if self.len != 0 && self.len & (self.len - 1) == 0 {
+            self.ptr = unsafe {
+                libc::realloc(self.ptr as *mut _, self.len * std::mem::size_of::<T>() * 2) as *mut T
+            };
+            assert_ne!(self.ptr, std::ptr::null_mut());
+        }
+        unsafe {
+            *(self.ptr.add(self.len)) = content;
+        }
+        self.len += 1;
+    }
+    pub fn get(&self, index: usize) -> &T {
+        if index < self.len {
+            unsafe { self.ptr.add(index).as_ref().unwrap() }
+        } else {
+            panic!("request @{} with len {}", index, self.len);
+        }
+    }
+    pub fn get_mut(&mut self, index: usize) -> &mut T {
+        if index < self.len {
+            unsafe { self.ptr.add(index).as_mut().unwrap() }
+        } else {
+            panic!("request @{} with len {}", index, self.len);
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<T> Drop for RawVec<T> {
+    fn drop(&mut self) {
+        unsafe {
+            libc::free(self.ptr as *mut _);
+        }
+    }
+}
+
+impl<T> std::ops::Index<usize> for RawVec<T> {
+    type Output = T;
+
+    fn index(&self, idx: usize) -> &Self::Output {
+        self.get(idx)
+    }
+}
+
+impl<T> std::ops::IndexMut<usize> for RawVec<T> {
+    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
+        self.get_mut(idx)
+    }
+}
+
 pub struct BinaryTree<T: std::fmt::Debug> {
-    data: Vec<Node<T>>,
+    data: RawVec<Node<T>>,
     root: Option<usize>,
     n: usize,
 }
 
 pub struct BinaryTreeIterator<'a, T: std::fmt::Debug> {
-    data: &'a Vec<Node<T>>,
+    data: &'a RawVec<Node<T>>,
     x: usize,
     stack: Vec<usize>,
 }
@@ -13,7 +77,7 @@ pub struct BinaryTreeIterator<'a, T: std::fmt::Debug> {
 impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
     pub fn new() -> Self {
         Self {
-            data: Vec::new(),
+            data: RawVec::new(),
             root: None,
             n: 0,
         }
@@ -50,16 +114,14 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
         }
     }
 
-    fn insert_content_recurse(&mut self, x: usize) {
+    fn insert_recurse(&mut self, x: usize) {
         // println!("insert stage 2");
         let p = self.data[x].parent;
-        // assert_ne!(p, ptr::null_mut());
         if let Color::Red = self.data[p].color {
             if p == self.root.unwrap() {
                 // println!("case root");
             } else {
                 let pp = self.data[p].parent;
-                // assert_ne!(pp, ptr::null_mut());
                 let f = if p == self.data[pp].left {
                     self.data[pp].right
                 } else {
@@ -105,7 +167,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                                 self.data[right_index].parent = p;
                             }
                             self.data[x].left = p;
-                            return self.insert_content_recurse(p);
+                            return self.insert_recurse(p);
                         }
                     } else {
                         if x == self.data[p].right {
@@ -145,7 +207,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                                 self.data[left_index].parent = p;
                             }
                             self.data[x].right = p;
-                            return self.insert_content_recurse(p);
+                            return self.insert_recurse(p);
                         }
                     }
                 } else {
@@ -155,7 +217,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                     self.data[pp].color = Color::Red;
                     self.data[self.root.unwrap()].color = Color::Black;
                     if pp != self.root.unwrap() {
-                        return self.insert_content_recurse(pp);
+                        return self.insert_recurse(pp);
                     }
                 }
                 // Cas 0 : le nœud père p est la racine de l'arbre
@@ -187,11 +249,10 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
             }
         } else {
             // println!("Parent is black");
-            // Parent is Black, do nothing
         }
     }
 
-    pub fn insert_content(&mut self, content: T) {
+    pub fn insert(&mut self, content: T) {
         self.n += 1;
         match self.root {
             Some(mut index) => {
@@ -219,7 +280,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                         }
                     }
                 };
-                self.insert_content_recurse(index);
+                self.insert_recurse(index);
             }
             None => {
                 self.data.push(Node::new(content));
@@ -338,6 +399,12 @@ impl<T: std::fmt::Debug> Drop for Node<T> {
 use rand::prelude::*;
 
 fn main() {
+    // let mut v = RawVec::new();
+    // for i in 0..1024 {
+    //     v.push(i);
+    //     dbg!(v.get_mut(v.len() - 1));
+    // }
+
     println!("sizeof node u64 : {}", std::mem::size_of::<Node<u64>>());
 
     let v = vec![
@@ -356,7 +423,7 @@ fn main() {
     let mut rnb = BinaryTree::new();
     for val in v.into_iter() {
         // println!("inserting {}", val);
-        rnb.insert_content(val);
+        rnb.insert(val);
         rnb.prefix_dump();
         rnb.check_nodes();
     }
@@ -371,12 +438,12 @@ fn main() {
     // loop {
     for _j in 0..4096 {
         let mut rnb = BinaryTree::new();
-        // let mut rnb = std::collections::BTreeSet::new();
+        //let mut rnb = std::collections::BTreeSet::new();
         for _i in 0..4096 {
             let y: u64 = rng.gen(); // generates a float between 0 and 1
                                     // println!("inserting {}", y);
                                     // rnb.insert_content(y);
-            rnb.insert_content(y);
+            rnb.insert(y);
             // rnb.prefix_dump();
             // rnb.check_nodes();
             // let mut max = None;
