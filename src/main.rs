@@ -62,13 +62,13 @@ impl<T> std::ops::IndexMut<usize> for RawVec<T> {
     }
 }
 
-pub struct BinaryTree<T: std::fmt::Debug> {
+pub struct BinaryTree<T> {
     data: RawVec<Node<T>>,
     root: Option<usize>,
     n: usize,
 }
 
-pub struct BinaryTreeIterator<'a, T: std::fmt::Debug> {
+pub struct BinaryTreeIterator<'a, T> {
     data: &'a RawVec<Node<T>>,
     x: usize,
     stack: Vec<usize>,
@@ -337,7 +337,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
     }
 }
 
-impl<'a, T: std::fmt::Debug> Iterator for BinaryTreeIterator<'a, T> {
+impl<'a, T> Iterator for BinaryTreeIterator<'a, T> {
     // we will be counting with usize
     type Item = &'a T;
 
@@ -358,7 +358,7 @@ impl<'a, T: std::fmt::Debug> Iterator for BinaryTreeIterator<'a, T> {
     }
 }
 
-impl<T: std::fmt::Debug> Drop for BinaryTree<T> {
+impl<T> Drop for BinaryTree<T> {
     fn drop(&mut self) {}
 }
 
@@ -371,7 +371,7 @@ enum Color {
 
 #[repr(C, align(64))]
 #[derive(Debug)]
-struct Node<T: std::fmt::Debug> {
+struct Node<T> {
     content: T,
     color: Color,
     parent: usize,
@@ -379,7 +379,7 @@ struct Node<T: std::fmt::Debug> {
     right: usize,
 }
 
-impl<T: std::cmp::PartialOrd + std::fmt::Debug> Node<T> {
+impl<T: std::cmp::PartialOrd> Node<T> {
     fn new(content: T) -> Self {
         Self {
             content,
@@ -390,7 +390,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> Node<T> {
         }
     }
 }
-impl<T: std::fmt::Debug> Drop for Node<T> {
+impl<T> Drop for Node<T> {
     fn drop(&mut self) {
         // println!("Node droped for value {:?}", self.content);
     }
