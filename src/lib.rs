@@ -1,3 +1,7 @@
+//! Red and Black Binary Tree based
+#![deny(missing_docs)]
+
+/// Main Structure
 pub struct RBBTree<T: std::cmp::PartialOrd> {
     data: Vec<Node<T>>,
     root: Option<usize>,
@@ -38,6 +42,7 @@ impl<T> Drop for Node<T> {
     fn drop(&mut self) {}
 }
 
+/// Iterator over Red and Black Binary Tree
 pub struct RBBTreeIterator<'a, T> {
     data: &'a Vec<Node<T>>,
     x: usize,
@@ -66,6 +71,7 @@ macro_rules! is_red {
 }
 
 impl<T: std::cmp::PartialOrd> RBBTree<T> {
+    /// Create a new Binary Tree
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -73,6 +79,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             n: 0,
         }
     }
+    /// Create an iterator over the Binary Tree
     pub fn iter<'a>(&'a self) -> RBBTreeIterator<'a, T> {
         RBBTreeIterator {
             data: &self.data,
@@ -80,6 +87,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             stack: Vec::new(),
         }
     }
+    /// Insert a single element into the Binary Tree
     pub fn insert(&mut self, content: T) {
         self.n += 1;
         match self.root {
@@ -116,6 +124,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             }
         };
     }
+    /// Remove a signgle element into the Binary Tree
     pub fn remove(&mut self, value: &T) -> bool {
         match self.root {
             Some(mut index) => {
@@ -152,7 +161,8 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             None => false,
         }
     }
-    #[cfg(debug_assertions)]
+    /// Check if the tree is okay
+    #[cfg(any(debug_assertions, test))]
     pub fn check_nodes(&self) {
         if let Some(index) = self.root {
             assert_eq!(self.data[index].color as u64, Color::Black as u64);
@@ -163,7 +173,8 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             assert_eq!(0, self.n);
         }
     }
-    #[cfg(debug_assertions)]
+    /// Dump the entier Tree with Prefix rules
+    #[cfg(any(debug_assertions, test))]
     pub fn prefix_dump(&self)
     where
         T: std::fmt::Debug,
@@ -172,7 +183,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             self.prefix_dump_recurse(index, 0);
         }
     }
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, test))]
     fn prefix_dump_recurse(&self, x: usize, level: u32)
     where
         T: std::fmt::Debug,
@@ -509,7 +520,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             );
         };
     }
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, test))]
     fn check_nodes_recurse(
         &self,
         x: usize,
@@ -570,4 +581,92 @@ impl<'a, T> Iterator for RBBTreeIterator<'a, T> {
 
 impl<T: std::cmp::PartialOrd> Drop for RBBTree<T> {
     fn drop(&mut self) {}
+}
+
+/**
+Commands to test the entire crate with all memory check on x86_64-unknown-linux-gnu
+DEBUG
+RUST_BACKTRACE=1 RUSTFLAGS=-Zsanitizer=address cargo test -Zbuild-std --target x86_64-unknown-linux-gnu
+RELEASE
+RUST_BACKTRACE=1 RUSTFLAGS=-Zsanitizer=address cargo test --release -Zbuild-std --target x86_64-unknown-linux-gnu
+*/
+#[cfg(test)]
+mod test {
+    use super::RBBTree;
+    use rand::prelude::*;
+    #[test]
+    fn simple() {
+        let v = vec![
+            0.6604497006826313,
+            0.4802799059433479,
+            0.41722104248437,
+            0.009563578859236865,
+            0.8728550074374297,
+            0.13379267290393926,
+            0.009863098457087216,
+            0.2927782076332135,
+            0.4034453299328443,
+            0.39366634150555624,
+        ];
+
+        let mut rnb = RBBTree::new();
+        for val in v.iter() {
+            println!("inserting {}", val);
+            rnb.insert(*val);
+            rnb.prefix_dump();
+            rnb.check_nodes();
+        }
+        let iter = rnb.iter();
+        for elem in iter {
+            println!("{}", elem);
+        }
+        dbg!(rnb.remove(&0.1927782076332135));
+        for e in v.iter() {
+            println!("Removing entry {}", e);
+            rnb.prefix_dump();
+            dbg!(rnb.remove(e));
+            rnb.prefix_dump();
+            rnb.check_nodes();
+            println!("Checked");
+        }
+    }
+    #[test]
+    fn multiple() {
+        let mut rng = rand::thread_rng();
+        for _i in 0..256 {
+            let mut v = Vec::new();
+            for _j in 0..64 {
+                v.push(rng.gen::<f64>());
+            }
+            let mut rnb = RBBTree::new();
+            for val in v.iter() {
+                println!("inserting {}", val);
+                rnb.insert(*val);
+                rnb.prefix_dump();
+                rnb.check_nodes();
+            }
+            assert_eq!(rnb.remove(&13.1927782076332135), false);
+            let mut v_acc = v.len();
+            v.shuffle(&mut thread_rng());
+            for e in v.iter() {
+                v_acc -= 1;
+                let b = rnb.remove(e);
+                assert_eq!(b, true);
+                rnb.check_nodes();
+                let mut max = None;
+                let mut acc = v_acc;
+                for g in rnb.iter() {
+                    acc -= 1;
+                    if let Some(max) = max {
+                        if g < max {
+                            panic!("Error for {}", g);
+                        }
+                    }
+                    max = Some(g);
+                }
+                assert_eq!(acc, 0);
+            }
+            assert_eq!(rnb.iter().next(), None);
+        }
+    }
 }
