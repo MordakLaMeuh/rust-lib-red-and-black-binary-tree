@@ -1,36 +1,8 @@
-#[macro_export]
-macro_rules! link {
-    ($child:expr, $parent:expr) => {};
+pub struct RBBTree<T: std::cmp::PartialOrd> {
+    data: Vec<Node<T>>,
+    root: Option<usize>,
+    n: usize,
 }
-
-#[macro_export]
-macro_rules! set_black {
-    ($item:expr) => {
-        $item.color = Color::Black;
-    };
-}
-
-#[macro_export]
-macro_rules! set_red {
-    ($item:expr) => {
-        $item.color = Color::Red;
-    };
-}
-
-#[macro_export]
-macro_rules! is_black {
-    ($item:expr) => {
-        $item.color as u64 == Color::Black as u64
-    };
-}
-#[macro_export]
-macro_rules! is_red {
-    ($item:expr) => {
-        $item.color as u64 == Color::Red as u64
-    };
-}
-
-use super::raw_vec::RawVec;
 
 #[repr(u64)]
 #[derive(Debug, Copy, Clone)]
@@ -63,64 +35,168 @@ impl<T: std::cmp::PartialOrd> Node<T> {
     }
 }
 impl<T> Drop for Node<T> {
-    fn drop(&mut self) {
-        // println!("Node droped for value {:?}", self.content);
-    }
+    fn drop(&mut self) {}
 }
 
-pub struct BinaryTree<T> {
-    data: RawVec<Node<T>>,
-    root: Option<usize>,
-    n: usize,
-}
-
-pub struct BinaryTreeIterator<'a, T> {
-    data: &'a RawVec<Node<T>>,
+pub struct RBBTreeIterator<'a, T> {
+    data: &'a Vec<Node<T>>,
     x: usize,
     stack: Vec<usize>,
 }
 
-impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
+macro_rules! set_black {
+    ($item:expr) => {
+        $item.color = Color::Black;
+    };
+}
+macro_rules! set_red {
+    ($item:expr) => {
+        $item.color = Color::Red;
+    };
+}
+macro_rules! is_black {
+    ($item:expr) => {
+        $item.color as u64 == Color::Black as u64
+    };
+}
+macro_rules! is_red {
+    ($item:expr) => {
+        $item.color as u64 == Color::Red as u64
+    };
+}
+
+impl<T: std::cmp::PartialOrd> RBBTree<T> {
     pub fn new() -> Self {
         Self {
-            data: RawVec::new(),
+            data: Vec::new(),
             root: None,
             n: 0,
         }
     }
-    pub fn iter<'a>(&'a self) -> BinaryTreeIterator<'a, T> {
-        BinaryTreeIterator {
+    pub fn iter<'a>(&'a self) -> RBBTreeIterator<'a, T> {
+        RBBTreeIterator {
             data: &self.data,
             x: self.root.unwrap_or(NO_ENTRY),
             stack: Vec::new(),
         }
     }
-
-    fn prefix_dump_recurse(&self, x: usize, level: u32) {
+    pub fn insert(&mut self, content: T) {
+        self.n += 1;
+        match self.root {
+            Some(mut index) => {
+                index = loop {
+                    if content < self.data[index].content {
+                        if self.data[index].left != NO_ENTRY {
+                            index = self.data[index].left;
+                        } else {
+                            self.data.push(Node::new(content));
+                            let new_index = self.data.len() - 1;
+                            self.data[index].left = new_index;
+                            self.data[new_index].parent = index;
+                            break new_index;
+                        }
+                    } else {
+                        if self.data[index].right != NO_ENTRY {
+                            index = self.data[index].right;
+                        } else {
+                            self.data.push(Node::new(content));
+                            let new_index = self.data.len() - 1;
+                            self.data[index].right = new_index;
+                            self.data[new_index].parent = index;
+                            break new_index;
+                        }
+                    }
+                };
+                self.insert_recurse(index);
+            }
+            None => {
+                self.data.push(Node::new(content));
+                self.data[0].color = Color::Black;
+                self.root = Some(0);
+            }
+        };
+    }
+    pub fn remove(&mut self, value: &T) -> bool {
+        match self.root {
+            Some(mut index) => {
+                index = loop {
+                    if value == &self.data[index].content {
+                        break index;
+                    } else if value < &self.data[index].content {
+                        if self.data[index].left != NO_ENTRY {
+                            index = self.data[index].left;
+                        } else {
+                            break NO_ENTRY;
+                        }
+                    } else {
+                        if self.data[index].right != NO_ENTRY {
+                            index = self.data[index].right;
+                        } else {
+                            break NO_ENTRY;
+                        }
+                    }
+                };
+                if index == NO_ENTRY {
+                    false
+                } else {
+                    self.n -= 1;
+                    self.remove_find_case(
+                        index,
+                        #[cfg(debug_assertions)]
+                        false,
+                    );
+                    drop(self.swap_remove(index));
+                    true
+                }
+            }
+            None => false,
+        }
+    }
+    #[cfg(debug_assertions)]
+    pub fn check_nodes(&self) {
+        if let Some(index) = self.root {
+            assert_eq!(self.data[index].color as u64, Color::Black as u64);
+            let mut total_nodes = 0;
+            self.check_nodes_recurse(index, 0, &mut total_nodes, Color::Black);
+            assert_eq!(total_nodes, self.n);
+        } else {
+            assert_eq!(0, self.n);
+        }
+    }
+    #[cfg(debug_assertions)]
+    pub fn prefix_dump(&self)
+    where
+        T: std::fmt::Debug,
+    {
+        if let Some(index) = self.root {
+            self.prefix_dump_recurse(index, 0);
+        }
+    }
+    #[cfg(debug_assertions)]
+    fn prefix_dump_recurse(&self, x: usize, level: u32)
+    where
+        T: std::fmt::Debug,
+    {
         if self.data[x].left != NO_ENTRY {
             self.prefix_dump_recurse(self.data[x].left, level + 1);
         }
         println!(
-            "lvl {} {:?} self: {} p: {} l: {} r: {}",
+            "lvl {} {:?} self: {} p: {} l: {} r: {} color: {:?}",
             level,
             self.data[x].content,
             x,
             self.data[x].parent,
             self.data[x].left,
-            self.data[x].right
+            self.data[x].right,
+            self.data[x].color,
         );
         if self.data[x].right != NO_ENTRY {
             self.prefix_dump_recurse(self.data[x].right, level + 1);
         }
     }
-
-    pub fn prefix_dump(&self) {
-        if let Some(index) = self.root {
-            self.prefix_dump_recurse(index, 0);
-        }
-    }
     #[inline(always)]
     fn rotate_right(&mut self, low: usize, high: usize) {
+        debug_assert_eq!(self.data[low].parent, high);
         self.data[low].parent = self.data[high].parent; // Assign new parents
         self.data[high].parent = low;
         self.data[high].left = self.data[low].right; // Move values
@@ -141,6 +217,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
     }
     #[inline(always)]
     fn rotate_left(&mut self, low: usize, high: usize) {
+        debug_assert_eq!(self.data[low].parent, high);
         self.data[low].parent = self.data[high].parent; // Assign new parents
         self.data[high].parent = low;
         self.data[high].right = self.data[low].left; // Move values
@@ -201,43 +278,6 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
             }
         }
     }
-
-    pub fn insert(&mut self, content: T) {
-        self.n += 1;
-        match self.root {
-            Some(mut index) => {
-                index = loop {
-                    if content < self.data[index].content {
-                        if self.data[index].left != NO_ENTRY {
-                            index = self.data[index].left;
-                        } else {
-                            self.data.push(Node::new(content));
-                            let new_index = self.data.len() - 1;
-                            self.data[index].left = new_index;
-                            self.data[new_index].parent = index;
-                            break new_index;
-                        }
-                    } else {
-                        if self.data[index].right != NO_ENTRY {
-                            index = self.data[index].right;
-                        } else {
-                            self.data.push(Node::new(content));
-                            let new_index = self.data.len() - 1;
-                            self.data[index].right = new_index;
-                            self.data[new_index].parent = index;
-                            break new_index;
-                        }
-                    }
-                };
-                self.insert_recurse(index);
-            }
-            None => {
-                self.data.push(Node::new(content));
-                self.data[0].color = Color::Black;
-                self.root = Some(0);
-            }
-        };
-    }
     fn swap_remove(&mut self, index: usize) -> Node<T> {
         let node = self.data.swap_remove(index);
         if index < self.data.len() {
@@ -251,7 +291,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                 } else if self.data[p].right == (old_len - 1) {
                     self.data[p].right = index;
                 } else {
-                    panic!("sa mere");
+                    panic!("swap_remove woot ?");
                 }
             } else {
                 self.root = Some(index);
@@ -263,7 +303,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                 self.data[r].parent = index;
             }
         }
-        dbg!(node)
+        node
     }
     #[inline(always)]
     fn set_new_child(&mut self, parent: usize, old_entry: usize, entry: usize) {
@@ -272,7 +312,7 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
         } else if old_entry == self.data[parent].right {
             self.data[parent].right = entry;
         } else {
-            panic!("sa mere");
+            panic!("set_new_child woot ?");
         }
     }
     #[inline(always)]
@@ -281,7 +321,98 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
         self.data[new_root].parent = NO_ENTRY;
         set_black!(self.data[new_root]);
     }
-    fn remove_find_case(&mut self, index: usize) {
+    #[inline(always)]
+    fn get_brother(&self, index: usize) -> usize {
+        debug_assert_ne!(self.data[index].parent, NO_ENTRY);
+        let parent = self.data[index].parent;
+        if index == self.data[parent].right {
+            self.data[parent].left
+        } else if index == self.data[parent].left {
+            self.data[parent].right
+        } else {
+            panic!("get_brother woot ?");
+        }
+    }
+    fn remove_modify_tree(&mut self, p: usize, f: usize) {
+        debug_assert_ne!(p, NO_ENTRY);
+        debug_assert_ne!(f, NO_ENTRY);
+        let p_color = self.data[p].color;
+        let f_color = self.data[f].color;
+        let sl = self.data[f].left;
+        let sl_color = if sl != NO_ENTRY {
+            self.data[sl].color
+        } else {
+            Color::Black
+        };
+        let sr = self.data[f].right;
+        let sr_color = if sr != NO_ENTRY {
+            self.data[sr].color
+        } else {
+            Color::Black
+        };
+        enum Symetric {
+            Left,
+            Right,
+        }
+        use Symetric::*;
+        let symetric = if f == self.data[p].left {
+            Left
+        } else if f == self.data[p].right {
+            Right
+        } else {
+            panic!("remove_modify_tree woot ?");
+        };
+        match (symetric, f_color, sl_color, sr_color) {
+            (_, Color::Black, Color::Black, Color::Black) => {
+                set_red!(self.data[f]);
+                let pp = self.data[p].parent;
+                if p_color as u64 == Color::Red as u64 {
+                    self.data[p].color = Color::Black;
+                } else if p_color as u64 == Color::Black as u64 && pp != NO_ENTRY {
+                    let fp = self.get_brother(p);
+                    self.remove_modify_tree(pp, fp);
+                } else {
+                }
+            }
+            (Left, Color::Black, Color::Red, _) => {
+                self.data[f].color = self.data[p].color;
+                set_black!(self.data[p]);
+                set_black!(self.data[sl]);
+                self.rotate_right(f, p);
+            }
+            (Right, Color::Black, _, Color::Red) => {
+                self.data[f].color = self.data[p].color;
+                set_black!(self.data[p]);
+                set_black!(self.data[sr]);
+                self.rotate_left(f, p);
+            }
+            (Left, Color::Black, _, Color::Red) => {
+                self.data[sr].color = self.data[p].color;
+                set_black!(self.data[p]);
+                self.rotate_left(sr, f);
+                self.rotate_right(sr, p);
+            }
+            (Right, Color::Black, Color::Red, _) => {
+                self.data[sl].color = self.data[p].color;
+                set_black!(self.data[p]);
+                self.rotate_right(sl, f);
+                self.rotate_left(sl, p);
+            }
+            (Left, Color::Red, _, _) => {
+                self.rotate_right(f, p);
+                set_black!(self.data[f]);
+                set_red!(self.data[p]);
+                self.remove_modify_tree(p, sr);
+            }
+            (Right, Color::Red, _, _) => {
+                self.rotate_left(f, p);
+                set_black!(self.data[f]);
+                set_red!(self.data[p]);
+                self.remove_modify_tree(p, sl);
+            }
+        }
+    }
+    fn remove_find_case(&mut self, index: usize, #[cfg(debug_assertions)] recursive_call: bool) {
         let p = self.data[index].parent;
         let r = self.data[index].right;
         let l = self.data[index].left;
@@ -289,45 +420,46 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
         let right_child_present = || -> bool { r != NO_ENTRY };
         let left_child_present = || -> bool { l != NO_ENTRY };
         if !left_child_present() && !right_child_present() {
-            println!("case no right or left son");
             if !is_root() {
+                let f = self.get_brother(index);
                 self.set_new_child(p, index, NO_ENTRY);
                 if is_black!(self.data[index]) {
-                    // move tree f s1 s2 p ON index WARNING retreave F before set_new_child
+                    self.remove_modify_tree(p, f);
                 }
             } else {
-                println!("case root - END");
                 self.root = None;
             }
         } else if left_child_present() && !right_child_present() {
-            println!("case l but no r");
             if !is_root() {
+                let f = self.get_brother(index);
                 self.set_new_child(p, index, l);
                 self.data[l].parent = p;
                 if is_black!(self.data[l]) {
-                    // move tree f s1 s2 p ON l
+                    self.remove_modify_tree(p, f);
+                } else {
+                    set_black!(self.data[l]);
                 }
             } else {
-                println!("case root");
                 self.set_as_root(l);
             }
         } else if !left_child_present() && right_child_present() {
-            println!("case r but no l");
             if !is_root() {
+                let f = self.get_brother(index);
                 self.set_new_child(p, index, r);
                 self.data[r].parent = p;
                 if is_black!(self.data[r]) {
-                    // move tree f s1 s2 p ON r
+                    self.remove_modify_tree(p, f);
+                } else {
+                    set_black!(self.data[r]);
                 }
             } else {
-                println!("case root");
                 self.set_as_root(r);
             }
         } else {
-            println!("case two childs");
+            #[cfg(debug_assertions)]
+            debug_assert_ne!(recursive_call, true);
             let mut foreign_index = r; // Find right [left...] node
             if self.data[foreign_index].left != NO_ENTRY {
-                println!("case right - [left]...");
                 while self.data[foreign_index].left != NO_ENTRY {
                     foreign_index = self.data[foreign_index].left;
                 }
@@ -341,17 +473,21 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                 foreign_index
             };
             self.data[foreign_index].parent = p;
-            if p == NO_ENTRY {
+            if is_root() {
                 self.root = Some(foreign_index);
             } else {
                 self.set_new_child(p, index, foreign_index);
             }
 
             self.data[foreign_index].left = l;
-            if l != NO_ENTRY {
+            if left_child_present() {
                 self.data[l].parent = foreign_index;
             }
             self.data[index].left = NO_ENTRY;
+
+            let index_color = self.data[index].color;
+            self.data[index].color = self.data[foreign_index].color;
+            self.data[foreign_index].color = index_color;
 
             let foreign_right_child = self.data[foreign_index].right;
             self.data[index].right = foreign_right_child;
@@ -359,50 +495,21 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
                 self.data[foreign_right_child].parent = index;
             }
             self.data[foreign_index].right = if r != foreign_index {
-                if r != NO_ENTRY {
+                if right_child_present() {
                     self.data[r].parent = foreign_index;
                 }
                 r
             } else {
                 index
             };
-            self.remove_find_case(index);
+            self.remove_find_case(
+                index,
+                #[cfg(debug_assertions)]
+                true,
+            );
         };
     }
-
-    pub fn remove(&mut self, value: &T) -> bool {
-        println!("Removing stage 1");
-        match self.root {
-            Some(mut index) => {
-                index = loop {
-                    if value == &self.data[index].content {
-                        break index;
-                    } else if value < &self.data[index].content {
-                        if self.data[index].left != NO_ENTRY {
-                            index = self.data[index].left;
-                        } else {
-                            break NO_ENTRY;
-                        }
-                    } else {
-                        if self.data[index].right != NO_ENTRY {
-                            index = self.data[index].right;
-                        } else {
-                            break NO_ENTRY;
-                        }
-                    }
-                };
-                if index == NO_ENTRY {
-                    false
-                } else {
-                    self.n -= 1;
-                    self.remove_find_case(index);
-                    drop(self.swap_remove(index));
-                    true
-                }
-            }
-            None => false,
-        }
-    }
+    #[cfg(debug_assertions)]
     fn check_nodes_recurse(
         &self,
         x: usize,
@@ -438,20 +545,9 @@ impl<T: std::cmp::PartialOrd + std::fmt::Debug> BinaryTree<T> {
         assert_eq!(black_left, black_right);
         black_left
     }
-
-    pub fn check_nodes(&self) {
-        if let Some(index) = self.root {
-            assert_eq!(self.data[index].color as u64, Color::Black as u64);
-            let mut total_nodes = 0;
-            self.check_nodes_recurse(index, 0, &mut total_nodes, Color::Black);
-            assert_eq!(total_nodes, self.n);
-        } else {
-            assert_eq!(0, self.n);
-        }
-    }
 }
 
-impl<'a, T> Iterator for BinaryTreeIterator<'a, T> {
+impl<'a, T> Iterator for RBBTreeIterator<'a, T> {
     // we will be counting with usize
     type Item = &'a T;
 
@@ -472,6 +568,6 @@ impl<'a, T> Iterator for BinaryTreeIterator<'a, T> {
     }
 }
 
-impl<T> Drop for BinaryTree<T> {
+impl<T: std::cmp::PartialOrd> Drop for RBBTree<T> {
     fn drop(&mut self) {}
 }

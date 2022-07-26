@@ -1,7 +1,7 @@
 mod btree;
 mod raw_vec;
 
-use btree::BinaryTree;
+use btree::RBBTree;
 use rand::prelude::*;
 
 fn main() {
@@ -51,7 +51,7 @@ fn main() {
         0.39366634150555624,
     ];
 
-    let mut rnb = BinaryTree::new();
+    let mut rnb = RBBTree::new();
     for val in v.iter() {
         // println!("inserting {}", val);
         rnb.insert(*val);
@@ -64,8 +64,12 @@ fn main() {
     }
     dbg!(rnb.remove(&0.1927782076332135));
     for e in v.iter() {
+        println!("Removing entry {}", e);
+        rnb.prefix_dump();
         dbg!(rnb.remove(e));
         rnb.prefix_dump();
+        rnb.check_nodes();
+        println!("Checked");
     }
 
     for _i in 0..256 {
@@ -73,28 +77,26 @@ fn main() {
         for _j in 0..64 {
             v.push(rng.gen::<f64>());
         }
-        let mut rnb = BinaryTree::new();
+        let mut rnb = RBBTree::new();
         for val in v.iter() {
             // println!("inserting {}", val);
             rnb.insert(*val);
-            rnb.prefix_dump();
+            // rnb.prefix_dump();
             rnb.check_nodes();
         }
-        let iter = rnb.iter();
-        for elem in iter {
-            println!("{}", elem);
-        }
-        dbg!(rnb.remove(&0.1927782076332135));
+        assert_eq!(rnb.remove(&13.1927782076332135), false);
         let mut v_acc = v.len();
+        v.shuffle(&mut thread_rng());
         for e in v.iter() {
             v_acc -= 1;
-            rnb.prefix_dump();
-            let b = dbg!(rnb.remove(e));
+            // rnb.prefix_dump();
+            let b = rnb.remove(e);
             assert_eq!(b, true);
+            rnb.check_nodes();
             let mut max = None;
             let mut acc = v_acc;
             for g in rnb.iter() {
-                dbg!(g);
+                // dbg!(g);
                 acc -= 1;
                 if let Some(max) = max {
                     if g < max {
@@ -107,19 +109,16 @@ fn main() {
         }
         assert_eq!(rnb.iter().next(), None);
     }
+    for _j in 0..4096 {
+        let mut rnb = RBBTree::new();
+        // let mut rnb = std::collections::BTreeSet::new();
 
-    drop(rnb);
-    // return;
-
-    // loop {
-    for _j in 0..1 {
-        let mut rnb = BinaryTree::new();
-        //let mut rnb = std::collections::BTreeSet::new();
+        let mut v = Vec::new();
         for _i in 0..4096 {
-            let y: u64 = rng.gen(); // generates a float between 0 and 1
-                                    // println!("inserting {}", y);
-                                    // rnb.insert_content(y);
-            rnb.insert(y);
+            v.push(rng.gen::<u64>());
+        }
+        for elem in v.iter() {
+            rnb.insert(*elem);
             // rnb.prefix_dump();
             // rnb.check_nodes();
             // let mut max = None;
@@ -131,6 +130,28 @@ fn main() {
             //     }
             //     max = Some(val);
             // }
+        }
+        v.shuffle(&mut thread_rng());
+        // let mut v_acc = v.len();
+        for elem in v.iter() {
+            // v_acc -= 1;
+            // assert_eq!(rnb.remove(elem), true);
+            rnb.remove(elem);
+            // rnb.check_nodes();
+            // let mut acc = v_acc;
+            // let mut max = None;
+
+            // for g in rnb.iter() {
+            //     // dbg!(g);
+            //     acc -= 1;
+            //     if let Some(max) = max {
+            //         if g < max {
+            //             panic!("Error for {}", g);
+            //         }
+            //     }
+            //     max = Some(g);
+            // }
+            // assert_eq!(acc, 0);
         }
     }
 }
