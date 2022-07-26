@@ -1,11 +1,21 @@
 //! Red and Black Binary Tree based
 #![deny(missing_docs)]
+#![cfg_attr(nightly, feature(allocator_api))]
+#![cfg_attr(nightly, feature(nonnull_slice_from_raw_parts))]
+
+#[cfg(nightly)]
+use std::alloc::{Allocator, Global};
 
 /// Main Structure
-pub struct RBBTree<T: std::cmp::PartialOrd> {
+pub struct RBBTree<T: std::cmp::PartialOrd, A: Allocator = Global> {
+    #[cfg(nightly)]
+    data: Vec<Node<T>, A>,
+    #[cfg(not(nightly))]
     data: Vec<Node<T>>,
     root: Option<usize>,
     n: usize,
+    #[cfg(not(nightly))]
+    phantom: std::marker::PhantomData<A>,
 }
 
 #[repr(u64)]
@@ -43,10 +53,15 @@ impl<T> Drop for Node<T> {
 }
 
 /// Iterator over Red and Black Binary Tree
-pub struct RBBTreeIterator<'a, T> {
+pub struct RBBTreeIterator<'a, T, A: Allocator = Global> {
+    #[cfg(not(nightly))]
     data: &'a Vec<Node<T>>,
+    #[cfg(nightly)]
+    data: &'a Vec<Node<T>, A>,
     x: usize,
     stack: Vec<usize>,
+    #[cfg(not(nightly))]
+    phantom: std::marker::PhantomData<A>,
 }
 
 macro_rules! set_black {
@@ -70,6 +85,15 @@ macro_rules! is_red {
     };
 }
 
+#[cfg(not(nightly))]
+/// Dummy Allocator trait for Stable rust
+pub trait Allocator {}
+#[cfg(not(nightly))]
+/// Dummy Globale struct for Stable rust
+pub struct Global {}
+#[cfg(not(nightly))]
+impl Allocator for Global {}
+
 impl<T: std::cmp::PartialOrd> RBBTree<T> {
     /// Create a new Binary Tree
     pub fn new() -> Self {
@@ -77,16 +101,32 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
             data: Vec::new(),
             root: None,
             n: 0,
+            #[cfg(not(nightly))]
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
+    #[cfg(nightly)]
+    /// Create a new Binary Tree with Custom Allocator
+    pub fn new_in(alloc: A) -> Self {
+        Self {
+            data: Vec::new_in(alloc),
+            root: None,
+            n: 0,
         }
     }
     /// Create an iterator over the Binary Tree
-    pub fn iter<'a>(&'a self) -> RBBTreeIterator<'a, T> {
+    pub fn iter<'a>(&'a self) -> RBBTreeIterator<'a, T, A> {
         RBBTreeIterator {
             data: &self.data,
             x: self.root.unwrap_or(NO_ENTRY),
             stack: Vec::new(),
+            #[cfg(not(nightly))]
+            phantom: std::marker::PhantomData,
         }
     }
+
     /// Insert a single element into the Binary Tree
     pub fn insert(&mut self, content: T) {
         self.n += 1;
@@ -558,7 +598,7 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
     }
 }
 
-impl<'a, T> Iterator for RBBTreeIterator<'a, T> {
+impl<'a, T, A: Allocator> Iterator for RBBTreeIterator<'a, T, A> {
     // we will be counting with usize
     type Item = &'a T;
 
@@ -579,7 +619,7 @@ impl<'a, T> Iterator for RBBTreeIterator<'a, T> {
     }
 }
 
-impl<T: std::cmp::PartialOrd> Drop for RBBTree<T> {
+impl<T: std::cmp::PartialOrd, A: Allocator> Drop for RBBTree<T, A> {
     fn drop(&mut self) {}
 }
 
@@ -593,6 +633,7 @@ RUST_BACKTRACE=1 RUSTFLAGS=-Zsanitizer=address cargo test --release -Zbuild-std 
 #[cfg(test)]
 mod test {
     use super::RBBTree;
+    use rand::distributions::Standard;
     use rand::prelude::*;
     #[test]
     fn simple() {
@@ -632,20 +673,52 @@ mod test {
     }
     #[test]
     fn multiple() {
+        make_multiple_test(|| RBBTree::new(), &12.43);
+    }
+    #[cfg(nightly)]
+    #[test]
+    fn multiple_custom_alloc() {
+        use std::alloc::{AllocError, Allocator, Layout};
+        use std::ffi::c_void;
+        use std::ptr::NonNull;
+
+        struct CustomAllocator {}
+
+        unsafe impl Allocator for CustomAllocator {
+            fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+                let ptr = unsafe { libc::memalign(layout.align(), layout.size()) };
+                Ok(NonNull::slice_from_raw_parts(
+                    NonNull::new(ptr as *mut u8).unwrap(),
+                    layout.size(),
+                ))
+            }
+            unsafe fn deallocate(&self, ptr: NonNull<u8>, _layout: Layout) {
+                libc::free(ptr.as_ptr() as *mut c_void);
+            }
+        }
+        make_multiple_test(|| RBBTree::new_in(&CustomAllocator {}), &12.43);
+    }
+    fn make_multiple_test<F, T, A>(gen: F, bad_value: &T)
+    where
+        F: Fn() -> RBBTree<T, A>,
+        T: std::cmp::PartialOrd + std::fmt::Debug + std::fmt::Display + Copy + Clone,
+        Standard: Distribution<T>,
+        A: super::Allocator,
+    {
         let mut rng = rand::thread_rng();
         for _i in 0..256 {
+            let mut rnb = gen();
             let mut v = Vec::new();
             for _j in 0..64 {
-                v.push(rng.gen::<f64>());
+                v.push(rng.gen::<T>());
             }
-            let mut rnb = RBBTree::new();
             for val in v.iter() {
                 println!("inserting {}", val);
                 rnb.insert(*val);
                 rnb.prefix_dump();
                 rnb.check_nodes();
             }
-            assert_eq!(rnb.remove(&13.1927782076332135), false);
+            assert_eq!(rnb.remove(bad_value), false);
             let mut v_acc = v.len();
             v.shuffle(&mut thread_rng());
             for e in v.iter() {
