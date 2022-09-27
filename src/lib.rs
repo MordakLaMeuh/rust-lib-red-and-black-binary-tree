@@ -6,14 +6,24 @@
 #[cfg(nightly)]
 use std::alloc::{Allocator, Global};
 
-/// Main Structure
-pub struct RBBTree<T: std::cmp::PartialOrd, A: Allocator = Global> {
+/// Main Map Structure
+pub struct RBBTreeMap<K: std::cmp::PartialOrd, V, A: Allocator = Global> {
     #[cfg(nightly)]
-    data: Vec<Node<T>, A>,
+    data: Vec<Node<K, V>, A>,
     #[cfg(not(nightly))]
-    data: Vec<Node<T>>,
+    data: Vec<Node<K, V>>,
     root: Option<usize>,
     n: usize,
+    #[cfg(not(nightly))]
+    phantom: std::marker::PhantomData<A>,
+}
+
+/// Main Set Structure
+pub struct RBBTreeSet<K: std::cmp::PartialOrd, A: Allocator = Global> {
+    #[cfg(nightly)]
+    map: RBBTreeMap<K, (), A>,
+    #[cfg(not(nightly))]
+    map: RBBTreeMap<K, ()>,
     #[cfg(not(nightly))]
     phantom: std::marker::PhantomData<A>,
 }
@@ -27,8 +37,9 @@ enum Color {
 
 #[repr(C, align(64))]
 #[derive(Debug)]
-struct Node<T> {
-    content: T,
+struct Node<K, V> {
+    key: K,
+    value: V,
     color: Color,
     parent: usize,
     left: usize,
@@ -37,10 +48,11 @@ struct Node<T> {
 
 const NO_ENTRY: usize = usize::MAX;
 
-impl<T: std::cmp::PartialOrd> Node<T> {
-    fn new(content: T) -> Self {
+impl<K: std::cmp::PartialOrd, V> Node<K, V> {
+    fn new(key: K, value: V) -> Self {
         Self {
-            content,
+            key,
+            value,
             color: Color::Red,
             parent: NO_ENTRY,
             left: NO_ENTRY,
@@ -48,20 +60,25 @@ impl<T: std::cmp::PartialOrd> Node<T> {
         }
     }
 }
-impl<T> Drop for Node<T> {
+impl<K, V> Drop for Node<K, V> {
     fn drop(&mut self) {}
 }
 
-/// Iterator over Red and Black Binary Tree
-pub struct RBBTreeIterator<'a, T, A: Allocator = Global> {
+/// Iterator over Red and Black Binary Tree Map
+pub struct RBBTreeMapIterator<'a, K, V, A: Allocator = Global> {
     #[cfg(not(nightly))]
-    data: &'a Vec<Node<T>>,
+    data: &'a Vec<Node<K, V>>,
     #[cfg(nightly)]
-    data: &'a Vec<Node<T>, A>,
+    data: &'a Vec<Node<K, V>, A>,
     x: usize,
     stack: Vec<usize>,
     #[cfg(not(nightly))]
     phantom: std::marker::PhantomData<A>,
+}
+
+/// Iterator over Red and Black Binary Tree Set
+pub struct RBBTreeSetIterator<'a, K, A: Allocator = Global> {
+    map: RBBTreeMapIterator<'a, K, (), A>,
 }
 
 macro_rules! set_black {
@@ -94,7 +111,7 @@ pub struct Global {}
 #[cfg(not(nightly))]
 impl Allocator for Global {}
 
-impl<T: std::cmp::PartialOrd> RBBTree<T> {
+impl<K: std::cmp::PartialOrd, V> RBBTreeMap<K, V> {
     /// Create a new Binary Tree
     pub fn new() -> Self {
         Self {
@@ -106,7 +123,19 @@ impl<T: std::cmp::PartialOrd> RBBTree<T> {
         }
     }
 }
-impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
+
+impl<K: std::cmp::PartialOrd> RBBTreeSet<K> {
+    /// Create a new Binary Tree
+    pub fn new() -> Self {
+        Self {
+            map: RBBTreeMap::new(),
+            #[cfg(not(nightly))]
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<K: std::cmp::PartialOrd, V, A: Allocator> RBBTreeMap<K, V, A> {
     #[cfg(nightly)]
     /// Create a new Binary Tree with Custom Allocator
     pub fn new_in(alloc: A) -> Self {
@@ -117,8 +146,8 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
         }
     }
     /// Create an iterator over the Binary Tree
-    pub fn iter<'a>(&'a self) -> RBBTreeIterator<'a, T, A> {
-        RBBTreeIterator {
+    pub fn iter<'a>(&'a self) -> RBBTreeMapIterator<'a, K, V, A> {
+        RBBTreeMapIterator {
             data: &self.data,
             x: self.root.unwrap_or(NO_ENTRY),
             stack: Vec::new(),
@@ -128,16 +157,16 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
     }
 
     /// Insert a single element into the Binary Tree
-    pub fn insert(&mut self, content: T) {
+    pub fn insert(&mut self, key: K, value: V) {
         self.n += 1;
         match self.root {
             Some(mut index) => {
                 index = loop {
-                    if content < self.data[index].content {
+                    if key < self.data[index].key {
                         if self.data[index].left != NO_ENTRY {
                             index = self.data[index].left;
                         } else {
-                            self.data.push(Node::new(content));
+                            self.data.push(Node::new(key, value));
                             let new_index = self.data.len() - 1;
                             self.data[index].left = new_index;
                             self.data[new_index].parent = index;
@@ -147,7 +176,7 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
                         if self.data[index].right != NO_ENTRY {
                             index = self.data[index].right;
                         } else {
-                            self.data.push(Node::new(content));
+                            self.data.push(Node::new(key, value));
                             let new_index = self.data.len() - 1;
                             self.data[index].right = new_index;
                             self.data[new_index].parent = index;
@@ -158,20 +187,24 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
                 self.insert_recurse(index);
             }
             None => {
-                self.data.push(Node::new(content));
+                self.data.push(Node::new(key, value));
                 self.data[0].color = Color::Black;
                 self.root = Some(0);
             }
         };
     }
     /// Remove a signgle element into the Binary Tree
-    pub fn remove(&mut self, value: &T) -> bool {
+    pub fn remove<Q>(&mut self, key: &K) -> Option<V>
+    where
+        K: std::borrow::Borrow<Q> + std::cmp::PartialOrd,
+        Q: std::cmp::PartialOrd + ?Sized,
+    {
         match self.root {
             Some(mut index) => {
                 index = loop {
-                    if value == &self.data[index].content {
+                    if key == &self.data[index].key {
                         break index;
-                    } else if value < &self.data[index].content {
+                    } else if key < &self.data[index].key {
                         if self.data[index].left != NO_ENTRY {
                             index = self.data[index].left;
                         } else {
@@ -186,7 +219,7 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
                     }
                 };
                 if index == NO_ENTRY {
-                    false
+                    None
                 } else {
                     self.n -= 1;
                     self.remove_find_case(
@@ -194,11 +227,15 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
                         #[cfg(debug_assertions)]
                         false,
                     );
-                    drop(self.swap_remove(index));
-                    true
+                    let node = self.swap_remove(index);
+                    let mut value = std::mem::MaybeUninit::uninit();
+                    unsafe {
+                        std::ptr::copy(&node.value as *const V, value.as_mut_ptr(), 1);
+                        Some(value.assume_init())
+                    }
                 }
             }
-            None => false,
+            None => None,
         }
     }
     /// Check if the tree is okay
@@ -217,7 +254,8 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
     #[cfg(any(debug_assertions, test))]
     pub fn prefix_dump(&self)
     where
-        T: std::fmt::Debug,
+        K: std::fmt::Debug,
+        V: std::fmt::Debug,
     {
         if let Some(index) = self.root {
             self.prefix_dump_recurse(index, 0);
@@ -226,15 +264,17 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
     #[cfg(any(debug_assertions, test))]
     fn prefix_dump_recurse(&self, x: usize, level: u32)
     where
-        T: std::fmt::Debug,
+        K: std::fmt::Debug,
+        V: std::fmt::Debug,
     {
         if self.data[x].left != NO_ENTRY {
             self.prefix_dump_recurse(self.data[x].left, level + 1);
         }
         println!(
-            "lvl {} {:?} self: {} p: {} l: {} r: {} color: {:?}",
+            "lvl {} {:?} {:? }self: {} p: {} l: {} r: {} color: {:?}",
             level,
-            self.data[x].content,
+            self.data[x].key,
+            self.data[x].value,
             x,
             self.data[x].parent,
             self.data[x].left,
@@ -329,7 +369,7 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
             }
         }
     }
-    fn swap_remove(&mut self, index: usize) -> Node<T> {
+    fn swap_remove(&mut self, index: usize) -> Node<K, V> {
         let node = self.data.swap_remove(index);
         if index < self.data.len() {
             let p = self.data[index].parent;
@@ -598,9 +638,46 @@ impl<T: std::cmp::PartialOrd, A: Allocator> RBBTree<T, A> {
     }
 }
 
-impl<'a, T, A: Allocator> Iterator for RBBTreeIterator<'a, T, A> {
+impl<K: std::cmp::PartialOrd, A: Allocator> RBBTreeSet<K, A> {
+    #[cfg(nightly)]
+    /// Create a new Binary Tree with Custom Allocator
+    pub fn new_in(alloc: A) -> Self {
+        Self {
+            map: RBBTreeMap::new_in(alloc),
+        }
+    }
+    /// Create an iterator over the Binary Tree Set
+    pub fn iter<'a>(&'a self) -> RBBTreeSetIterator<'a, K, A> {
+        RBBTreeSetIterator {
+            map: self.map.iter(),
+        }
+    }
+    /// Insert a single element into the Binary Tree Set
+    pub fn insert(&mut self, key: K) {
+        self.map.insert(key, ());
+    }
+    /// Remove a signgle element into the Binary Tree Set
+    pub fn remove(&mut self, key: &K) -> bool {
+        self.map.remove(key).is_some()
+    }
+    /// Check if the tree Set is okay
+    #[cfg(any(debug_assertions, test))]
+    pub fn check_nodes(&self) {
+        self.map.check_nodes();
+    }
+    /// Dump the entier Tree with Prefix rules
+    #[cfg(any(debug_assertions, test))]
+    pub fn prefix_dump(&self)
+    where
+        K: std::fmt::Debug,
+    {
+        self.map.prefix_dump();
+    }
+}
+
+impl<'a, K, V, A: Allocator> Iterator for RBBTreeMapIterator<'a, K, V, A> {
     // we will be counting with usize
-    type Item = &'a T;
+    type Item = (&'a K, &'a V);
 
     // next() is the only required method
     fn next(&mut self) -> Option<Self::Item> {
@@ -610,16 +687,23 @@ impl<'a, T, A: Allocator> Iterator for RBBTreeIterator<'a, T, A> {
                 self.x = self.data[self.x].left;
             } else {
                 self.x = self.stack.pop().unwrap();
-                let content = &self.data[self.x].content;
+                let (key, value) = (&self.data[self.x].key, &self.data[self.x].value);
                 self.x = self.data[self.x].right;
-                return Some(content);
+                return Some((key, value));
             }
         }
         return None;
     }
 }
 
-impl<T: std::cmp::PartialOrd, A: Allocator> Drop for RBBTree<T, A> {
+impl<'a, K, A: Allocator> Iterator for RBBTreeSetIterator<'a, K, A> {
+    type Item = &'a K;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.map.next().map(|(k, _)| k)
+    }
+}
+
+impl<K: std::cmp::PartialOrd, V, A: Allocator> Drop for RBBTreeMap<K, V, A> {
     fn drop(&mut self) {}
 }
 
@@ -632,11 +716,11 @@ RUST_BACKTRACE=1 RUSTFLAGS=-Zsanitizer=address cargo test --release -Zbuild-std 
 */
 #[cfg(test)]
 mod test {
-    use super::RBBTree;
+    use super::{RBBTreeMap, RBBTreeSet};
     use rand::distributions::Standard;
     use rand::prelude::*;
     #[test]
-    fn simple() {
+    fn simple_set() {
         let v = vec![
             0.6604497006826313,
             0.4802799059433479,
@@ -650,7 +734,7 @@ mod test {
             0.39366634150555624,
         ];
 
-        let mut rnb = RBBTree::new();
+        let mut rnb = RBBTreeSet::new();
         for val in v.iter() {
             println!("inserting {}", val);
             rnb.insert(*val);
@@ -672,8 +756,44 @@ mod test {
         }
     }
     #[test]
+    fn simple_map() {
+        let v = vec![
+            0.6604497006826313,
+            0.4802799059433479,
+            0.41722104248437,
+            0.009563578859236865,
+            0.8728550074374297,
+            0.13379267290393926,
+            0.009863098457087216,
+            0.2927782076332135,
+            0.4034453299328443,
+            0.39366634150555624,
+        ];
+
+        let mut rnb = RBBTreeMap::new();
+        for val in v.iter() {
+            println!("inserting {}", val);
+            rnb.insert(*val, *val);
+            rnb.prefix_dump();
+            rnb.check_nodes();
+        }
+        let iter = rnb.iter();
+        for (key, value) in iter {
+            println!("{} {}", *key, *value);
+        }
+        dbg!(rnb.remove(&0.1927782076332135));
+        for e in v.iter() {
+            println!("Removing entry {}", e);
+            rnb.prefix_dump();
+            dbg!(rnb.remove(e));
+            rnb.prefix_dump();
+            rnb.check_nodes();
+            println!("Checked");
+        }
+    }
+    #[test]
     fn multiple() {
-        make_multiple_test(|| RBBTree::new(), &12.43);
+        make_multiple_test(|| RBBTreeSet::new(), &12.43);
     }
     #[cfg(nightly)]
     #[test]
@@ -696,11 +816,11 @@ mod test {
                 libc::free(ptr.as_ptr() as *mut c_void);
             }
         }
-        make_multiple_test(|| RBBTree::new_in(&CustomAllocator {}), &12.43);
+        make_multiple_test(|| RBBTreeSet::new_in(&CustomAllocator {}), &12.43);
     }
     fn make_multiple_test<F, T, A>(gen: F, bad_value: &T)
     where
-        F: Fn() -> RBBTree<T, A>,
+        F: Fn() -> RBBTreeSet<T, A>,
         T: std::cmp::PartialOrd + std::fmt::Debug + std::fmt::Display + Copy + Clone,
         Standard: Distribution<T>,
         A: super::Allocator,

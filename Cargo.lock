@@ -62,7 +62,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rb_binary_tree"
+name = "rbbtree"
 version = "0.1.0"
 dependencies = [
  "libc",
